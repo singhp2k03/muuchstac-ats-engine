@@ -11,6 +11,7 @@ import asyncio
 import logging
 import requests
 import numpy as np
+import hashlib 
 from sklearn.metrics.pairwise import haversine_distances
 from geopy.geocoders import Nominatim
 from functools import lru_cache
@@ -18,7 +19,6 @@ from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 
-# 👉 NEW: Tell Python to load the hidden .env file
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -27,7 +27,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 logger = logging.getLogger(__name__)
 
 # --- CONFIGURATION ---
-# 👉 NEW: Fetch the key securely from the hidden file!
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")   
 GEMINI_MODEL = "gemini-3.1-flash-lite" 
 MAX_CONCURRENT = 2        
@@ -45,7 +44,6 @@ def get_coordinates(city_name: str):
     try:
         location = geolocator.geocode(f"{city_name}, India", timeout=5)
         if location:
-            # We now also return the FULL official address so we can check the State
             return (location.latitude, location.longitude, location.address)
     except Exception as e:
         logger.error(f"Geocoding failed for {city_name}: {e}")
@@ -55,7 +53,6 @@ def calculate_hybrid_location_score(candidate_city: str, target_city: str = "Bor
     if not candidate_city or not target_city:
         return {"relevancy": "Unknown", "status": "Location unknown."}
 
-    # STAGE 0: The Broad City Bypass
     cand_clean = candidate_city.lower().replace("maharashtra", "").replace("india", "").strip(" ,.")
     target_clean = target_city.lower().replace("maharashtra", "").replace("india", "").strip(" ,.")
     
@@ -69,14 +66,12 @@ def calculate_hybrid_location_score(candidate_city: str, target_city: str = "Bor
     if len(target_parts) == 1 and target_parts[0] in cand_parts:
         return {"relevancy": "High", "status": f"Broad city match - {target_parts[0].title()} (Assumed Local)"}
 
-    # STAGE 1: Scikit-Learn Fast Filter 
     cand_data = get_coordinates(candidate_city)
     office_data = get_coordinates(target_city)
 
     if not cand_data or not office_data:
         return {"relevancy": "Unknown", "status": "Location unknown."}
 
-    # Extract coordinates and the full geographic address string
     cand_coords = (cand_data[0], cand_data[1])
     office_coords = (office_data[0], office_data[1])
     cand_address = cand_data[2].lower() 
@@ -87,15 +82,12 @@ def calculate_hybrid_location_score(candidate_city: str, target_city: str = "Bor
     dist_matrix = haversine_distances(office_rad, cand_rad)
     straight_line_km = dist_matrix[0][0] * 6371.0  
     
-    # --- IN-STATE BYPASS LOGIC ---
     if straight_line_km > 50.0:
-        # Check if "Maharashtra" is in their official map address OR what they typed
         if "maharashtra" in cand_address or "maharashtra" in candidate_city.lower():
             return {"relevancy": "Low", "status": f"In-State ({straight_line_km:.1f} km away)"}
         else:
             return {"relevancy": "Relocation", "status": f"Out of State ({straight_line_km:.1f} km away)"}
 
-    # STAGE 2: OSRM Routing Brain 
     lon1, lat1 = office_coords[1], office_coords[0]
     lon2, lat2 = cand_coords[1], cand_coords[0]
     
@@ -219,7 +211,6 @@ async def evaluate_resume(file_bytes: bytes, filename: str, jd: str, cfg: Filter
             result = json.loads(response.text)
             result["is_qualified"] = True 
             
-            # Add hybrid location processing (Relevancy instead of Points)
             geo_data = await asyncio.to_thread(calculate_hybrid_location_score, result["candidate_location"], cfg.target_loc)
             
             result["location_relevancy"] = geo_data["relevancy"]
@@ -259,11 +250,26 @@ async def analyze_batch_parallel(
     mandatory_education: bool = Form(False),
     target_location: str = Form("Borivali, Mumbai"),
     mandatory_location: bool = Form(False),
-    passing_score: int = Form(60), # 👉 Restored to 60 as previously requested
+    passing_score: int = Form(60),
     shortlist_top_n: int = Form(0),
 ):
-    file_data = [(await f.read(), f.filename) for f in files if f.filename.lower().endswith((".pdf", ".docx"))]
-    if not file_data: raise HTTPException(status_code=400, detail="No valid files.")
+    # 👉 TIER 1 DEDUPLICATION: Byte-Level Hashing
+    file_data = []
+    seen_hashes = set()
+    
+    for f in files:
+        if f.filename.lower().endswith((".pdf", ".docx")):
+            content = await f.read()
+            file_hash = hashlib.md5(content).hexdigest() 
+            
+            if file_hash not in seen_hashes:
+                seen_hashes.add(file_hash)
+                file_data.append((content, f.filename))
+            else:
+                logger.info(f"Tier 1 Duplicate Blocked: Skipped '{f.filename}' (Identical File)")
+
+    if not file_data: 
+        raise HTTPException(status_code=400, detail="No valid or unique files found.")
 
     cfg = FilterConfig(min_experience_years, required_skills, required_education, target_location, 
                        mandatory_experience, mandatory_education, mandatory_skills, mandatory_location, passing_score)
@@ -271,8 +277,45 @@ async def analyze_batch_parallel(
     tasks = [evaluate_resume(fb, fn, job_description, cfg) for fb, fn in file_data]
     raw_results = await asyncio.gather(*tasks)
 
-    successes = [r for r in raw_results if not r.get("_failed")]
-    if not successes: raise HTTPException(status_code=500, detail="All files failed (Check terminal for details).")
+    successes_raw = [r for r in raw_results if not r.get("_failed")]
+    if not successes_raw: 
+        raise HTTPException(status_code=500, detail="All files failed (Check terminal for details).")
 
+    # 👉 TIER 2 DEDUPLICATION: Identity Matching
+    unique_candidates = {}
+    
+    for cand in successes_raw:
+        # 1. Safely extract email and name, forcing them to lowercase strings
+        email = str(cand.get("contact_email", "")).lower().strip()
+        name = str(cand.get("candidate_name", "")).lower().strip()
+        
+        # 2. Decide what makes this candidate "unique"
+        # We prefer email. If email is "not found" or empty, we fall back to their name.
+        if email and email not in ["not found", "n/a", "unknown", "none", ""]:
+            cand_id = email
+        elif name and name not in ["not found", "n/a", "unknown", "none", ""]:
+            cand_id = name
+        else:
+            cand_id = str(id(cand)) # Extreme fallback if both are missing
+            
+        # 3. Check if we have seen this person already
+        if cand_id not in unique_candidates:
+            unique_candidates[cand_id] = cand
+        else:
+            # We HAVE seen them! Compare their total scores.
+            existing_score = unique_candidates[cand_id].get("total_score", 0)
+            new_score = cand.get("total_score", 0)
+            
+            if new_score > existing_score:
+                # The new resume scored higher, so overwrite the old one
+                unique_candidates[cand_id] = cand
+                logger.info(f"Tier 2 Duplicate Merged: Kept higher scoring resume for {cand_id}")
+            else:
+                logger.info(f"Tier 2 Duplicate Dropped: Ignored lower/equal scoring resume for {cand_id}")
+
+    # Convert the dictionary back into a list of candidates
+    successes = list(unique_candidates.values())
+    
+    # Final Sorting
     successes.sort(key=lambda c: (not c.get("is_qualified", False), -c.get("total_score", 0)))
     return successes[:shortlist_top_n] if shortlist_top_n > 0 else successes
