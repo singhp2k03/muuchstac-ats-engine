@@ -30,6 +30,87 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- 📚 JOB DESCRIPTION LIBRARY ---
+    const jdInput = document.getElementById('job_description');
+    const jdSelector = document.getElementById('jd_selector');
+    const saveJDBtn = document.getElementById('saveJDBtn');
+    const jdSavePanel = document.getElementById('jd_save_panel');
+    const jdTitleInput = document.getElementById('jd_title');
+    const confirmSaveJDBtn = document.getElementById('confirmSaveJDBtn');
+    const cancelSaveJDBtn = document.getElementById('cancelSaveJDBtn');
+
+    // Load saved JDs from LocalStorage on page load
+    function loadJDLibrary() {
+        const library = JSON.parse(localStorage.getItem('jd_library')) || {};
+        
+        // Reset dropdown (keep the default option)
+        jdSelector.innerHTML = '<option value="">-- Load Saved JD --</option>';
+        
+        // Populate dropdown with saved JDs
+        for (const title in library) {
+            const option = document.createElement('option');
+            option.value = title;
+            option.textContent = title;
+            jdSelector.appendChild(option);
+        }
+    }
+
+    if (jdInput && jdSelector) {
+        loadJDLibrary();
+
+        // When a user selects a JD from the dropdown, fill the text area
+        jdSelector.addEventListener('change', (e) => {
+            const selectedTitle = e.target.value;
+            if (selectedTitle) {
+                const library = JSON.parse(localStorage.getItem('jd_library')) || {};
+                jdInput.value = library[selectedTitle] || "";
+            } else {
+                jdInput.value = ""; // Clear if they select the default option
+            }
+        });
+
+        // Show the save panel when "Save JD" is clicked
+        saveJDBtn.addEventListener('click', () => {
+            if (!jdInput.value.trim()) {
+                alert("Please paste a Job Description first before saving!");
+                return;
+            }
+            jdSavePanel.classList.remove('hidden');
+            jdTitleInput.focus();
+        });
+
+        // Hide the save panel on Cancel
+        cancelSaveJDBtn.addEventListener('click', () => {
+            jdSavePanel.classList.add('hidden');
+            jdTitleInput.value = "";
+        });
+
+        // Save the JD to LocalStorage
+        confirmSaveJDBtn.addEventListener('click', () => {
+            const title = jdTitleInput.value.trim();
+            const content = jdInput.value.trim();
+
+            if (!title) {
+                alert("Please enter a title for this Job Description.");
+                return;
+            }
+
+            // Fetch existing library, add new entry, and save back
+            const library = JSON.parse(localStorage.getItem('jd_library')) || {};
+            library[title] = content;
+            localStorage.setItem('jd_library', JSON.stringify(library));
+
+            // Reset UI and reload dropdown
+            jdSavePanel.classList.add('hidden');
+            jdTitleInput.value = "";
+            loadJDLibrary();
+            
+            // Auto-select the newly saved JD
+            jdSelector.value = title;
+            alert(`"${title}" saved successfully!`);
+        });
+    }
+
     // --- Modal Logic ---
     const modal = document.getElementById('candidateModal');
     const closeModal = document.getElementById('closeModal');
@@ -116,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('job_description', getVal('job_description'));
             formData.append('min_experience_years', getVal('min_experience_years') || "0");
             formData.append('target_location', getVal('target_location'));
-            formData.append('passing_score', getVal('passing_score') || "70");
+            formData.append('passing_score', getVal('passing_score') || "60");
             
             formData.append('mandatory_experience', getCheck('mandatory_experience'));
             formData.append('mandatory_location', getCheck('mandatory_location'));

@@ -18,11 +18,17 @@ from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 
+# 👉 NEW: Tell Python to load the hidden .env file
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
 
 # --- CONFIGURATION ---
-GEMINI_API_KEY = "YOUR_API_KEY_HERE"   
+# 👉 NEW: Fetch the key securely from the hidden file!
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")   
 GEMINI_MODEL = "gemini-3.1-flash-lite" 
 MAX_CONCURRENT = 2        
 
@@ -253,7 +259,7 @@ async def analyze_batch_parallel(
     mandatory_education: bool = Form(False),
     target_location: str = Form("Borivali, Mumbai"),
     mandatory_location: bool = Form(False),
-    passing_score: int = Form(70),
+    passing_score: int = Form(60), # 👉 Restored to 60 as previously requested
     shortlist_top_n: int = Form(0),
 ):
     file_data = [(await f.read(), f.filename) for f in files if f.filename.lower().endswith((".pdf", ".docx"))]

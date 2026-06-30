@@ -272,18 +272,19 @@ td small { color: var(--text-muted); display: block; margin-top: 4px;}
     animation: modalFadeIn 0.3s ease-out;
 }
 
-/* Custom Scrollbar to fix right-side sharp corners */
+/* Custom Scrollbar with Right Margin/Gap */
 .modal-content::-webkit-scrollbar {
-    width: 8px;
+    width: 14px; 
 }
 .modal-content::-webkit-scrollbar-track {
     background: transparent;
-    /* THE FIX: Stops the scrollbar track 16px before the top and bottom corners! */
     margin: 16px 0; 
 }
 .modal-content::-webkit-scrollbar-thumb {
     background-color: #cbd5e1;
     border-radius: 10px;
+    border: 4px solid white; 
+    background-clip: padding-box; 
 }
 .modal-content::-webkit-scrollbar-thumb:hover {
     background-color: #94a3b8;
@@ -329,20 +330,56 @@ td small { color: var(--text-muted); display: block; margin-top: 4px;}
     font-size: 16px;
 }
 
+.dashboard-card p { margin: 8px 0; font-size: 14px; }
+
+/* --- DYNAMIC VERDICT BOXES --- */
 .justification-box {
-    background: #eff6ff;
     padding: 18px;
     border-radius: 8px;
-    border-left: 4px solid var(--primary);
     margin: 0 0 24px 0;
-    color: #1e3a8a;
     font-size: 15px;
     line-height: 1.6;
 }
 
-.missing-list { color: var(--danger); padding-left: 20px; margin: 0; }
-.matched-list { color: var(--success); padding-left: 20px; margin: 0; }
-.dashboard-card p { margin: 8px 0; font-size: 14px; }
+.verdict-qualified {
+    background: #f0fdf4;
+    border-left: 4px solid var(--success);
+    color: #166534;
+}
+
+.verdict-rejected {
+    background: #fef2f2;
+    border-left: 4px solid var(--danger);
+    color: #991b1b;
+}
+
+/* --- SKILL PILLS --- */
+.skills-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.skill-pill {
+    background-color: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.missing-pill {
+    background-color: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+}
 
 /* --- 8. PREMIUM TABLE UI UPGRADES --- */
 .status-badge {
@@ -624,25 +661,22 @@ body.dark-mode .dashboard-card {
 }
 
 body.dark-mode .drop-zone:hover,
-body.dark-mode .drop-zone.dragover,
-body.dark-mode .justification-box {
+body.dark-mode .drop-zone.dragover {
     background-color: rgba(59, 130, 246, 0.1);
-}
-
-body.dark-mode .justification-box {
-    color: #60a5fa;
 }
 
 body.dark-mode .modal-content {
     background-color: var(--card-bg);
 }
 
-/* Match scrollbar color with dark mode */
+/* Dark Mode Scrollbar */
 body.dark-mode .modal-content::-webkit-scrollbar-track {
     background: transparent;
 }
 body.dark-mode .modal-content::-webkit-scrollbar-thumb {
     background-color: #334155;
+    border: 4px solid var(--card-bg); 
+    background-clip: padding-box; 
 }
 body.dark-mode .modal-content::-webkit-scrollbar-thumb:hover {
     background-color: #475569;
@@ -673,3 +707,29 @@ body.dark-mode .status-rejected {
 }
 body.dark-mode .danger-stat h3,
 body.dark-mode .danger-stat p { color: #f87171; }
+
+/* Dark mode overrides for dynamic boxes & pills */
+body.dark-mode .verdict-qualified { background: rgba(16, 185, 129, 0.1); color: #34d399; }
+body.dark-mode .verdict-rejected { background: rgba(239, 68, 68, 0.1); color: #f87171; }
+body.dark-mode .skill-pill { background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3); color: #34d399; }
+body.dark-mode .missing-pill { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #f87171; }
+
+/* --- 15. SKELETON LOADING ANIMATION --- */
+.skeleton-box {
+    background: #e2e8f0;
+    background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.5s infinite linear;
+    border-radius: 4px;
+}
+
+@keyframes skeletonShimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+body.dark-mode .skeleton-box {
+    background: #334155;
+    background: linear-gradient(90deg, #334155 25%, #475569 50%, #334155 75%);
+    background-size: 200% 100%;
+}
