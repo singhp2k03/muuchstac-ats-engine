@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 
 # --- CONFIGURATION ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")   
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") # Ready for future
+# CUSTOM_API_URL = os.getenv("CUSTOM_API_URL") # Ready for future
+
 GEMINI_MODEL = "gemini-3.1-flash-lite" 
 MAX_CONCURRENT = 2        
 
@@ -131,6 +134,13 @@ class FilterConfig:
     mand_loc: bool
     passing_score: int
 
+# 👉 NEW: Schema for JD Extraction
+class JDExtractionAI(BaseModel):
+    min_experience_years: float = Field(description="Minimum years of experience required (output 0 if not mentioned)")
+    required_skills: str = Field(description="Top 5-7 core technical skills required, separated by commas")
+    required_education: str = Field(description="The minimum education degree required (e.g., 'Bachelors', 'MBA'). Leave blank if not mentioned.")
+    target_location: str = Field(description="The primary city or location for the job. Leave blank if remote/not mentioned.")
+
 class CandidateEvaluationAI(BaseModel):
     candidate_name: str       = Field(description="Full name extracted from resume")
     experience_score: int     = Field(description="Experience score out of 40")
@@ -189,9 +199,32 @@ Edu (30 pts)
 RULES:
 1. If a requirement is Mandatory=True and candidate fails it, set is_qualified = false.
 2. DO NOT score Location. Just extract the precise city/neighborhood for candidate_location.
+3. Carefully calculate the candidate's total years of professional work experience and output it as a number in experience_years (e.g., 2.5 for two and a half years).
 """
 
-async def evaluate_resume(file_bytes: bytes, filename: str, jd: str, cfg: FilterConfig) -> dict:
+# 👉 NEW: The AI Router Function
+async def call_ai_engine(prompt: str, ai_provider: str) -> dict:
+    if ai_provider == "gemini":
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=CandidateEvaluationAI)
+        )
+        return json.loads(response.text)
+        
+    elif ai_provider == "openai":
+        # Placeholder for future OpenAI integration
+        raise NotImplementedError("OpenAI API is not yet configured.")
+        
+    elif ai_provider == "custom":
+        # Placeholder for future Custom / Local API integration
+        raise NotImplementedError("Custom API is not yet configured.")
+        
+    else:
+        raise ValueError(f"Unknown AI Provider: {ai_provider}")
+
+async def evaluate_resume(file_bytes: bytes, filename: str, jd: str, cfg: FilterConfig, ai_provider: str) -> dict:
     async with semaphore:
         try:
             text = await asyncio.to_thread(extract_text_from_bytes, file_bytes, filename)
@@ -202,13 +235,8 @@ async def evaluate_resume(file_bytes: bytes, filename: str, jd: str, cfg: Filter
 
             prompt = build_prompt(text, jd, cfg)
             
-            response = await asyncio.to_thread(
-                client.models.generate_content,
-                model=GEMINI_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=CandidateEvaluationAI)
-            )
-            result = json.loads(response.text)
+            # 👉 Pass the prompt to the new router
+            result = await call_ai_engine(prompt, ai_provider)
             result["is_qualified"] = True 
             
             geo_data = await asyncio.to_thread(calculate_hybrid_location_score, result["candidate_location"], cfg.target_loc)
@@ -237,6 +265,34 @@ async def evaluate_resume(file_bytes: bytes, filename: str, jd: str, cfg: Filter
             return {"_failed": True, "_reason": f"Failed '{filename}': {exc}"}
 
 # --- 4. API ENDPOINT ---
+
+# 👉 NEW: The Endpoint that reads the JD
+@app.post("/extract-jd-params/")
+async def extract_jd_params(job_description: str = Form(...), ai_provider: str = Form("gemini")):
+    prompt = f"""
+    You are an expert technical recruiter. Read the following Job Description and extract the core requirements.
+    Return the data exactly as requested in the JSON schema.
+    
+    JOB DESCRIPTION:
+    {job_description}
+    """
+    
+    try:
+        # We reuse your existing AI Router to do the extraction!
+        if ai_provider == "gemini":
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model=GEMINI_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=JDExtractionAI)
+            )
+            return json.loads(response.text)
+        else:
+            raise NotImplementedError("Only Gemini is configured for JD extraction right now.")
+    except Exception as e:
+        logger.error(f"JD Extraction failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/analyze-batch-parallel/", response_model=list[CandidateEvaluation])
 async def analyze_batch_parallel(
     response: Response,   
@@ -252,6 +308,7 @@ async def analyze_batch_parallel(
     mandatory_location: bool = Form(False),
     passing_score: int = Form(60),
     shortlist_top_n: int = Form(0),
+    ai_provider: str = Form("gemini") # 👉 NEW: Receive the engine choice
 ):
     # 👉 TIER 1 DEDUPLICATION: Byte-Level Hashing
     file_data = []
@@ -274,7 +331,8 @@ async def analyze_batch_parallel(
     cfg = FilterConfig(min_experience_years, required_skills, required_education, target_location, 
                        mandatory_experience, mandatory_education, mandatory_skills, mandatory_location, passing_score)
 
-    tasks = [evaluate_resume(fb, fn, job_description, cfg) for fb, fn in file_data]
+    # Pass the ai_provider into the processing loop
+    tasks = [evaluate_resume(fb, fn, job_description, cfg, ai_provider) for fb, fn in file_data]
     raw_results = await asyncio.gather(*tasks)
 
     successes_raw = [r for r in raw_results if not r.get("_failed")]
@@ -285,37 +343,29 @@ async def analyze_batch_parallel(
     unique_candidates = {}
     
     for cand in successes_raw:
-        # 1. Safely extract email and name, forcing them to lowercase strings
         email = str(cand.get("contact_email", "")).lower().strip()
         name = str(cand.get("candidate_name", "")).lower().strip()
         
-        # 2. Decide what makes this candidate "unique"
-        # We prefer email. If email is "not found" or empty, we fall back to their name.
         if email and email not in ["not found", "n/a", "unknown", "none", ""]:
             cand_id = email
         elif name and name not in ["not found", "n/a", "unknown", "none", ""]:
             cand_id = name
         else:
-            cand_id = str(id(cand)) # Extreme fallback if both are missing
+            cand_id = str(id(cand)) 
             
-        # 3. Check if we have seen this person already
         if cand_id not in unique_candidates:
             unique_candidates[cand_id] = cand
         else:
-            # We HAVE seen them! Compare their total scores.
             existing_score = unique_candidates[cand_id].get("total_score", 0)
             new_score = cand.get("total_score", 0)
             
             if new_score > existing_score:
-                # The new resume scored higher, so overwrite the old one
                 unique_candidates[cand_id] = cand
                 logger.info(f"Tier 2 Duplicate Merged: Kept higher scoring resume for {cand_id}")
             else:
                 logger.info(f"Tier 2 Duplicate Dropped: Ignored lower/equal scoring resume for {cand_id}")
 
-    # Convert the dictionary back into a list of candidates
     successes = list(unique_candidates.values())
     
-    # Final Sorting
     successes.sort(key=lambda c: (not c.get("is_qualified", False), -c.get("total_score", 0)))
     return successes[:shortlist_top_n] if shortlist_top_n > 0 else successes

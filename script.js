@@ -72,7 +72,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show the save panel when "Save JD" is clicked
         saveJDBtn.addEventListener('click', () => {
             if (!jdInput.value.trim()) {
-                alert("Please paste a Job Description first before saving!");
+                if(window.showToast) window.showToast("Please paste a Job Description first before saving!", "error");
+                else alert("Please paste a Job Description first before saving!");
                 return;
             }
             jdSavePanel.classList.remove('hidden');
@@ -91,7 +92,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const content = jdInput.value.trim();
 
             if (!title) {
-                alert("Please enter a title for this Job Description.");
+                if(window.showToast) window.showToast("Please enter a title for this Job Description.", "error");
+                else alert("Please enter a title for this Job Description.");
                 return;
             }
 
@@ -107,7 +109,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Auto-select the newly saved JD
             jdSelector.value = title;
-            alert(`"${title}" saved successfully!`);
+            if(window.showToast) window.showToast(`"${title}" saved successfully!`, "success");
+            else alert(`"${title}" saved successfully!`);
         });
     }
 
@@ -159,6 +162,72 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- 🤖 AUTO-EXTRACT JD REQUIREMENTS ---
+    const extractJdBtn = document.getElementById('extractJdBtn');
+    const extractBtnText = document.getElementById('extractBtnText');
+    
+    if (extractJdBtn) {
+        extractJdBtn.addEventListener('click', async () => {
+            const jdText = jdInput.value.trim();
+            if (!jdText) {
+                if(window.showToast) window.showToast("Please paste a Job Description first!", "error");
+                else alert("Please paste a Job Description first!");
+                return;
+            }
+
+            // UI Loading State
+            extractJdBtn.disabled = true;
+            extractBtnText.innerHTML = "Extracting Requirements...";
+            extractJdBtn.style.opacity = "0.7";
+
+            const formData = new FormData();
+            formData.append('job_description', jdText);
+            
+            // Hardcode the provider to 'gemini' since the UI element was removed to keep it simple for HR
+            formData.append('ai_provider', 'gemini');
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/extract-jd-params/', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error("Failed to extract params");
+                
+                const data = await response.json();
+
+                // Auto-fill the form boxes with the AI's findings!
+                if (document.getElementById('min_experience_years')) document.getElementById('min_experience_years').value = data.min_experience_years || 0;
+                if (document.getElementById('required_skills')) document.getElementById('required_skills').value = data.required_skills || "";
+                if (document.getElementById('required_education')) document.getElementById('required_education').value = data.required_education || "";
+                if (document.getElementById('target_location') && data.target_location) document.getElementById('target_location').value = data.target_location;
+
+                if(window.showToast) window.showToast("Requirements extracted successfully! You can edit them below.", "success");
+
+                // Add a cool brief highlight effect to show they were updated
+                const inputsToHighlight = ['min_experience_years', 'required_skills', 'required_education', 'target_location'];
+                inputsToHighlight.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.style.transition = "box-shadow 0.3s";
+                        el.style.boxShadow = "0 0 0 3px rgba(16, 185, 129, 0.4)"; // Green glow
+                        setTimeout(() => el.style.boxShadow = "none", 1500);
+                    }
+                });
+
+            } catch (error) {
+                console.error(error);
+                if(window.showToast) window.showToast("Failed to auto-extract. You can enter them manually.", "error");
+                else alert("Failed to auto-extract. You can enter them manually.");
+            } finally {
+                // Reset UI
+                extractJdBtn.disabled = false;
+                extractBtnText.innerHTML = "Auto-Extract Requirements from JD";
+                extractJdBtn.style.opacity = "1";
+            }
+        });
+    }
+
     // --- Form Submission ---
     const form = document.getElementById('atsForm');
     if (form) {
@@ -166,7 +235,8 @@ document.addEventListener('DOMContentLoaded', () => {
             event.preventDefault();
 
             if (!fileInput || fileInput.files.length === 0) {
-                alert("Please drag and drop at least one resume!");
+                if(window.showToast) window.showToast("Please drag and drop at least one resume!", "error");
+                else alert("Please drag and drop at least one resume!");
                 return;
             }
 
@@ -202,11 +272,15 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('mandatory_experience', getCheck('mandatory_experience'));
             formData.append('mandatory_location', getCheck('mandatory_location'));
             
-            formData.append('mandatory_education', 'false');
-            formData.append('mandatory_skills', 'false');
-            formData.append('required_skills', '');
-            formData.append('required_education', '');
+            formData.append('required_skills', getVal('required_skills'));
+            formData.append('required_education', getVal('required_education'));
+            formData.append('mandatory_skills', getCheck('mandatory_skills'));
+            formData.append('mandatory_education', getCheck('mandatory_education'));
+            
             formData.append('shortlist_top_n', 0);
+
+            // Hardcode the provider to 'gemini' silently in the background
+            formData.append('ai_provider', 'gemini');
 
             for (let i = 0; i < fileInput.files.length; i++) {
                 formData.append('files', fileInput.files[i]);
@@ -245,7 +319,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             : `<svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" style="margin-right: 4px;"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>`;
                         const statusText = candidate.is_qualified ? 'Qualified' : 'Rejected';
 
-                        // Create custom colors based on Relevancy Tag
                         let locColor = 'var(--text-muted)';
                         if(candidate.location_relevancy === 'High') locColor = 'var(--success)';
                         else if(candidate.location_relevancy === 'Medium') locColor = '#f59e0b'; 
@@ -265,7 +338,14 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </span>
                             </td>
                             <td><span class="total-score">${candidate.total_score}</span><span class="score-muted">/100</span></td>
-                            <td><strong>${candidate.experience_score}</strong><span class="score-muted">/40</span></td>
+                            
+                            <td>
+                                <strong>${candidate.experience_score}</strong><span class="score-muted">/40</span><br>
+                                <span style="font-size: 11px; font-weight: 600; color: var(--primary); background: #eff6ff; border: 1px solid #bfdbfe; padding: 2px 6px; border-radius: 4px; margin-top: 4px; display: inline-block;">
+                                    ${candidate.experience_years} Yrs
+                                </span>
+                            </td>
+                            
                             <td><strong>${candidate.skills_score}</strong><span class="score-muted">/30</span></td>
                             <td><strong>${candidate.education_score}</strong><span class="score-muted">/30</span></td>
                             <td>
@@ -288,7 +368,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             } catch (error) {
                 console.error('API Error:', error);
-                alert('Something went wrong!\n\nError: ' + error.message);
+                if(window.showToast) window.showToast('Something went wrong!\n\nError: ' + error.message, 'error');
+                else alert('Something went wrong!\n\nError: ' + error.message);
             } finally {
                 if (submitBtn) {
                     submitBtn.disabled = false;
@@ -353,16 +434,24 @@ window.openDashboard = function(index) {
         <div class="dashboard-grid">
             <div class="dashboard-card">
                 <h4>Pillar Breakdown</h4>
+                
                 <div style="margin-bottom: 12px;">
-                    <p style="margin-bottom: 2px;">${iconExp}<strong>Experience:</strong> ${cand.experience_score}/40</p>
+                    <p style="margin-bottom: 2px; display: flex; align-items: center;">
+                        ${iconExp}<strong>Experience:</strong>&nbsp;${cand.experience_score}/40 
+                        <span style="margin-left: 10px; background: #eff6ff; border: 1px solid #bfdbfe; color: var(--primary); padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600;">
+                            Total: ${cand.experience_years} Years
+                        </span>
+                    </p>
                     <div style="margin-left: 26px; font-size: 0.85em; color: var(--text-muted);">${cand.experience_details || cand.experience_years + ' years detected'}</div>
                 </div>
+                
                 <div style="margin-bottom: 12px;">
                     <p style="margin-bottom: 2px;">${iconSkills}<strong>Skills:</strong> ${cand.skills_score}/30</p>
                     <div style="margin-left: 26px; font-size: 0.85em; color: var(--text-muted);">${cand.skills_details || 'Score based on matched keywords'}</div>
                 </div>
                 <div style="margin-bottom: 12px;">
                     <p style="margin-bottom: 2px;">${iconEdu}<strong>Education:</strong> ${cand.education_score}/30</p>
+
                     <div style="margin-left: 26px; font-size: 0.85em; color: var(--text-muted);">${cand.education_details || 'Score based on degree match'}</div>
                 </div>
                 <div>
@@ -392,3 +481,48 @@ window.openDashboard = function(index) {
     
     modal.classList.remove('hidden');
 };
+
+// --- 🧰 CUSTOM TOAST MANAGER ---
+window.showToast = function(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `custom-toast toast-${type}`;
+    
+    // SVG Icons mapping perfectly to your image reference
+    const icons = {
+        success: `<svg viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`,
+        error: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path stroke-linecap="round" stroke-linejoin="round" d="M15 9l-6 6m0-6l6 6"></path></svg>`,
+        info: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path stroke-linecap="round" stroke-linejoin="round" d="M12 16v-4m0-4h.01"></path></svg>`,
+        warning: `<svg viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>`
+    };
+
+    const iconHtml = icons[type] || icons.info;
+
+    toast.innerHTML = `
+        <div class="toast-content">
+            <span class="toast-icon">${iconHtml}</span>
+            <p class="toast-message">${message}</p>
+        </div>
+        <button class="toast-close">&times;</button>
+        <div class="toast-progress"></div>
+    `;
+
+    toast.querySelector('.toast-close').addEventListener('click', () => {
+        dismissToast(toast);
+    });
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        if (toast.parentNode) dismissToast(toast);
+    }, 3000);
+};
+
+function dismissToast(toast) {
+    toast.style.animation = 'toastSlideOut 0.2s ease-in forwards';
+    setTimeout(() => {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 2000);
+}

@@ -40,6 +40,39 @@
                     </div>
                 
                     <textarea id="job_description" rows="5" placeholder="Paste the full job description here..." required></textarea>
+                    
+                    <!-- Auto-Extract Button -->
+                    <button type="button" id="extractJdBtn" style="margin-top: 10px; background: rgba(37, 99, 235, 0.1); color: var(--primary); border: 1px solid var(--primary); padding: 10px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 100%; transition: all 0.2s;">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="margin-right: 8px;"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        <span id="extractBtnText">Auto-Extract Requirements from JD</span>
+                    </button>
+                </div>
+
+                <!-- Skills and Education Boxes (Editable by User) -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="required_skills">Core Skills (Comma separated)</label>
+                        <input type="text" id="required_skills" placeholder="e.g., Python, React, SQL">
+                        <div class="toggle-wrapper">
+                            <label class="switch">
+                                <input type="checkbox" id="mandatory_skills">
+                                <span class="slider round"></span>
+                            </label>
+                            <span class="toggle-text">Mandatory (Hard Filter)</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="required_education">Required Education</label>
+                        <input type="text" id="required_education" placeholder="e.g., Bachelor's in Computer Science">
+                        <div class="toggle-wrapper">
+                            <label class="switch">
+                                <input type="checkbox" id="mandatory_education">
+                                <span class="slider round"></span>
+                            </label>
+                            <span class="toggle-text">Mandatory (Hard Filter)</span>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-row">
@@ -234,6 +267,9 @@
             <div id="modalBody"></div>
         </div>
     </div>
+
+    <!-- TOAST NOTIFICATION ANCHOR MOVED TO LEFT:20px -->
+    <div id="toastContainer" style="position: fixed; top: 20px; left: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 12px; max-width: 380px; width: 100%;"></div>
 
     <script src="script.js"></script>
 </body>

@@ -733,3 +733,106 @@ body.dark-mode .skeleton-box {
     background: linear-gradient(90deg, #334155 25%, #475569 50%, #334155 75%);
     background-size: 200% 100%;
 }
+
+/* --- 16. SOLID STATE TOAST SYSTEM --- */
+.custom-toast {
+    border-radius: 6px;
+    padding: 14px 18px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: relative;
+    overflow: hidden;
+    animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    transition: all 0.3s ease;
+    z-index: 9999;
+    color: #ffffff;
+    border: none;
+    min-height: 54px;
+}
+
+.toast-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-grow: 1;
+    padding-right: 24px;
+}
+
+.toast-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.toast-icon svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+}
+
+.toast-message {
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.4;
+    color: #ffffff;
+    margin: 0;
+}
+
+.toast-close {
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    transform: translateY(-50%);
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.2s;
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-family: Arial, sans-serif;
+}
+.toast-close:hover { color: #ffffff; }
+
+/* Progress Bar */
+.toast-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 4px;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.35);
+    transform-origin: left;
+    animation: toastProgressLinear 3s linear forwards;
+}
+
+/* Specific Variant Colors */
+.toast-warning { background-color: #b45309; } /* Amber/Brown */
+.toast-info { background-color: #0256b9; }    /* Deep Blue */
+.toast-error { background-color: #be123c; }   /* Crimson Red */
+.toast-success { background-color: #15803d; } /* Dark Green */
+
+body.dark-mode .custom-toast {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* Keyframe Animations */
+@keyframes toastSlideIn {
+    from { opacity: 0; transform: translateX(-40px) scale(0.95); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@keyframes toastSlideOut {
+    from { opacity: 1; transform: translateX(0) scale(1); }
+    to { opacity: 0; transform: translateX(-40px) scale(0.95); }
+}
+
+@keyframes toastProgressLinear {
+    from { transform: scaleX(1); }
+    to { transform: scaleX(0); }
+}
